@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NeuroScan — Prediction History</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -66,6 +68,13 @@
             background-clip: text;
         }
 
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
         .back-btn {
             display: inline-flex;
             align-items: center;
@@ -85,6 +94,29 @@
             border-color: var(--accent2);
             background: rgba(6,182,212,0.06);
         }
+
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #fff;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: none;
+            padding: 9px 18px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #3b82f6, #06b6d4);
+            cursor: pointer;
+            transition: all 0.25s;
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        .download-btn:hover {
+            opacity: 0.85;
+            transform: translateY(-1px);
+        }
+
+        .download-btn:active { transform: translateY(0); }
 
         /* Stats row */
         .stats {
@@ -127,10 +159,7 @@
             animation: fadeUp 0.6s ease 0.1s both;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
+        table { width: 100%; border-collapse: collapse; }
 
         thead tr {
             background: rgba(59,130,246,0.08);
@@ -155,7 +184,6 @@
         }
 
         tr:last-child td { border-bottom: none; }
-
         tr:hover td { background: rgba(59,130,246,0.04); }
 
         .badge {
@@ -189,6 +217,36 @@
             font-weight: 600;
         }
 
+        .delete-btn {
+            background: rgba(239,68,68,0.1);
+            color: #f87171;
+            border: 1px solid rgba(239,68,68,0.2);
+            padding: 5px 14px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        .delete-btn:hover {
+            background: rgba(239,68,68,0.25);
+            border-color: #ef4444;
+            color: #fff;
+        }
+
+        .delete-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        tr.removing {
+            animation: fadeOut 0.3s ease forwards;
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateX(0); }
+            to   { opacity: 0; transform: translateX(20px); }
+        }
+
         .empty {
             text-align: center;
             padding: 64px 24px;
@@ -207,14 +265,18 @@
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* Search bar */
-        .search-wrap {
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
             margin-bottom: 20px;
             animation: fadeUp 0.5s ease both;
+            flex-wrap: wrap;
         }
 
         .search-input {
-            width: 100%;
+            flex: 1;
+            min-width: 200px;
             background: var(--card);
             border: 1px solid var(--border);
             border-radius: 10px;
@@ -228,6 +290,12 @@
 
         .search-input:focus { border-color: var(--accent); }
         .search-input::placeholder { color: var(--muted); }
+
+        .filter-badge {
+            font-size: 0.78rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -236,7 +304,12 @@
     <!-- Header -->
     <div class="header">
         <h1>📋 Prediction History</h1>
-        <a href="/" class="back-btn">← Back to Scanner</a>
+        <div class="header-actions">
+            {% if logs %}
+            <button class="download-btn" onclick="downloadPDF()">⬇ Download PDF</button>
+            {% endif %}
+            <a href="/" class="back-btn">← Back to Scanner</a>
+        </div>
     </div>
 
     {% if logs %}
@@ -247,7 +320,7 @@
 
     <div class="stats">
         <div class="stat-card">
-            <div class="stat-num" style="color: var(--accent);">{{ logs | length }}</div>
+            <div class="stat-num" id="total-count" style="color: var(--accent);">{{ logs | length }}</div>
             <div class="stat-label">Total Scans</div>
         </div>
         <div class="stat-card">
@@ -260,9 +333,10 @@
         </div>
     </div>
 
-    <!-- Search -->
-    <div class="search-wrap">
+    <!-- Toolbar -->
+    <div class="toolbar">
         <input class="search-input" type="text" id="search" placeholder="🔍  Search by filename or result...">
+        <span class="filter-badge" id="filter-badge"></span>
     </div>
 
     <!-- Table -->
@@ -275,12 +349,17 @@
                     <th>File</th>
                     <th>Result</th>
                     <th>Confidence</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
                 {% for log in logs %}
-                <tr>
-                    <td style="color: var(--muted);">{{ loop.index }}</td>
+                <tr data-index="{{ loop.index0 }}"
+                    data-timestamp="{{ log.timestamp }}"
+                    data-filename="{{ log.filename }}"
+                    data-result="{{ log.result }}"
+                    data-confidence="{{ log.confidence }}">
+                    <td style="color: var(--muted);" class="row-num">{{ loop.index }}</td>
                     <td style="color: var(--muted); font-size: 0.8rem;">{{ log.timestamp }}</td>
                     <td style="font-weight:500; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                         {{ log.filename }}
@@ -291,6 +370,9 @@
                         </span>
                     </td>
                     <td><span class="conf-pill">{{ log.confidence }}</span></td>
+                    <td>
+                        <button class="delete-btn" onclick="deleteRecord(this)">🗑 Delete</button>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -309,13 +391,178 @@
 </div>
 
 <script>
-    // Live search filter
+    // ── Search filter ──
     document.getElementById('search')?.addEventListener('input', function () {
         const q = this.value.toLowerCase();
-        document.querySelectorAll('#history-table tbody tr').forEach(row => {
-            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        let visible = 0;
+        const allRows = document.querySelectorAll('#history-table tbody tr');
+        allRows.forEach(row => {
+            const match = row.textContent.toLowerCase().includes(q);
+            row.style.display = match ? '' : 'none';
+            if (match) visible++;
         });
+        const badge = document.getElementById('filter-badge');
+        if (q && badge) {
+            badge.textContent = `Showing ${visible} of ${allRows.length} records`;
+        } else if (badge) {
+            badge.textContent = '';
+        }
     });
+
+    // ── Delete record ──
+    function deleteRecord(btn) {
+        if (!confirm("Delete this record?")) return;
+
+        const row = btn.closest('tr');
+        const index = parseInt(row.dataset.index);
+
+        btn.disabled = true;
+        btn.textContent = '...';
+
+        fetch(`/delete/${index}`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    row.classList.add('removing');
+                    setTimeout(() => {
+                        row.remove();
+                        document.querySelectorAll('#history-table tbody tr').forEach((r, i) => {
+                            r.querySelector('.row-num').textContent = i + 1;
+                            r.dataset.index = i;
+                        });
+                        const totalEl = document.getElementById('total-count');
+                        if (totalEl) totalEl.textContent = parseInt(totalEl.textContent) - 1;
+                    }, 300);
+                } else {
+                    alert("Failed to delete. Try again.");
+                    btn.disabled = false;
+                    btn.textContent = '🗑 Delete';
+                }
+            })
+            .catch(() => {
+                alert("Network error. Try again.");
+                btn.disabled = false;
+                btn.textContent = '🗑 Delete';
+            });
+    }
+
+    // ── Download PDF ──
+    function downloadPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+        // Collect only visible rows
+        const rows = [];
+        let rowNum = 1;
+        document.querySelectorAll('#history-table tbody tr').forEach(row => {
+            if (row.style.display === 'none') return;
+            rows.push([
+                rowNum++,
+                row.dataset.timestamp,
+                row.dataset.filename,
+                row.dataset.result,
+                row.dataset.confidence
+            ]);
+        });
+
+        if (rows.length === 0) {
+            alert("No visible records to export.");
+            return;
+        }
+
+        const searchVal = document.getElementById('search')?.value?.trim();
+        const isFiltered = searchVal && searchVal.length > 0;
+        const now = new Date().toLocaleString();
+
+        // ── Dark background ──
+        doc.setFillColor(10, 14, 26);
+        doc.rect(0, 0, 297, 210, 'F');
+
+        // ── Title ──
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.setTextColor(226, 232, 240);
+        doc.text('NeuroScan — Prediction Report', 14, 17);
+
+        // ── Subtitle ──
+        doc.setFontSize(8.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 116, 139);
+        const subtitle = isFiltered
+            ? `Filter: "${searchVal}"   |   ${rows.length} record(s)   |   Generated: ${now}`
+            : `All records   |   ${rows.length} record(s)   |   Generated: ${now}`;
+        doc.text(subtitle, 14, 24);
+
+        // ── Divider ──
+        doc.setDrawColor(30, 45, 69);
+        doc.setLineWidth(0.4);
+        doc.line(14, 27, 283, 27);
+
+        // ── Table ──
+        doc.autoTable({
+            startY: 31,
+            head: [['#', 'Timestamp', 'Filename', 'Result', 'Confidence']],
+            body: rows,
+            theme: 'plain',
+            styles: {
+                font: 'helvetica',
+                fontSize: 9,
+                textColor: [226, 232, 240],
+                cellPadding: { top: 4, right: 6, bottom: 4, left: 6 },
+            },
+            headStyles: {
+                fillColor: [22, 29, 46],
+                textColor: [100, 116, 139],
+                fontStyle: 'bold',
+                fontSize: 8,
+                lineColor: [30, 45, 69],
+                lineWidth: 0.3,
+            },
+            alternateRowStyles: {
+                fillColor: [14, 20, 34],
+            },
+            bodyStyles: {
+                fillColor: [10, 14, 26],
+                lineColor: [30, 45, 69],
+                lineWidth: 0.2,
+            },
+            columnStyles: {
+                0: { cellWidth: 10, halign: 'center' },
+                1: { cellWidth: 44 },
+                2: { cellWidth: 80 },
+                3: { cellWidth: 80 },
+                4: { cellWidth: 30, halign: 'center' },
+            },
+            didParseCell: function (data) {
+                if (data.section === 'body' && data.column.index === 3) {
+                    const val = data.cell.raw?.toString() || '';
+                    data.cell.styles.textColor = val.includes('No Tumor')
+                        ? [52, 211, 153]   // green
+                        : [248, 113, 113]; // red
+                }
+                if (data.section === 'body' && data.column.index === 4) {
+                    data.cell.styles.textColor = [6, 182, 212]; // cyan
+                }
+            },
+            margin: { left: 14, right: 14 },
+        });
+
+        // ── Footer ──
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text('NeuroScan — Brain Tumor Detection', 14, 205);
+            doc.text(`Page ${i} of ${pageCount}`, 283, 205, { align: 'right' });
+        }
+
+        const filename = isFiltered
+            ? `neuroscan_filtered_${searchVal.replace(/\s+/g, '_')}.pdf`
+            : `neuroscan_report_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+        doc.save(filename);
+    }
 </script>
 </body>
 </html>

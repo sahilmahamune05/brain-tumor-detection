@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, render_template, request, send_from_directory, jsonify
 from keras.models import load_model
 from keras.preprocessing.image import load_img, img_to_array
 from keras.applications.vgg16 import preprocess_input
@@ -73,6 +73,20 @@ def log_prediction(filename, result, confidence):
 
 
 # ─────────────────────────────────────────────
+# Helper: Load & Save logs
+# ─────────────────────────────────────────────
+def load_logs():
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
+def save_logs(logs):
+    with open(LOG_FILE, 'w') as f:
+        json.dump(logs, f, indent=2)
+
+
+# ─────────────────────────────────────────────
 # Helper: Grad-CAM heatmap generation
 # ─────────────────────────────────────────────
 def generate_gradcam_b64(img_path, model, image_size=224):
@@ -128,7 +142,6 @@ def predict_tumor(image_path):
         confidence = float(np.max(predictions))
         label = CLASS_LABELS[predicted_index]
 
-        # Build per-class probabilities for the chart
         class_probs = {CLASS_LABELS[i]: float(predictions[0][i]) * 100 for i in range(len(CLASS_LABELS))}
 
         if label == 'notumor':
@@ -187,11 +200,26 @@ def index():
 # ─────────────────────────────────────────────
 @app.route('/history')
 def history():
-    logs = []
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, 'r') as f:
-            logs = json.load(f)
+    logs = load_logs()
     return render_template('history.html', logs=logs[::-1])
+
+
+# ─────────────────────────────────────────────
+# Route: Delete a history record
+# ─────────────────────────────────────────────
+@app.route('/delete/<int:index>', methods=['POST'])
+def delete_record(index):
+    try:
+        logs = load_logs()
+        # index comes from the reversed list shown in UI, convert back to original index
+        original_index = len(logs) - 1 - index
+        if 0 <= original_index < len(logs):
+            logs.pop(original_index)
+            save_logs(logs)
+            return jsonify({"success": True})
+        return jsonify({"success": False, "error": "Index out of range"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 
 # ─────────────────────────────────────────────

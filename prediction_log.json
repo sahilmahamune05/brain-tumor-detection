@@ -18,9 +18,33 @@
     "confidence": "99.94%"
   },
   {
-    "timestamp": "2026-04-21 00:17:28",
-    "filename": "Te-pi_0050.jpg",
+    "timestamp": "2026-04-21 21:58:57",
+    "filename": "Te-gl_0280.jpg",
+    "result": "Tumor Detected: Glioma",
+    "confidence": "66.30%"
+  },
+  {
+    "timestamp": "2026-04-21 22:01:28",
+    "filename": "Te-gl_0036.jpg",
+    "result": "Tumor Detected: Glioma",
+    "confidence": "99.91%"
+  },
+  {
+    "timestamp": "2026-04-21 22:14:20",
+    "filename": "Te-me_0161.jpg",
+    "result": "Tumor Detected: Meningioma",
+    "confidence": "50.26%"
+  },
+  {
+    "timestamp": "2026-04-21 22:24:24",
+    "filename": "Te-pi_0189.jpg",
     "result": "Tumor Detected: Pituitary",
     "confidence": "100.00%"
+  },
+  {
+    "timestamp": "2026-04-21 22:27:49",
+    "filename": "Te-pi_0179.jpg",
+    "result": "Tumor Detected: Pituitary",
+    "confidence": "99.99%"
   }
 ]
